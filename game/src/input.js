@@ -1,57 +1,67 @@
-// Mouse and keyboard input. The mouse clicks straight on the pictures;
-// the keyboard drives a crosshair (arrow keys to move, Enter or Space to
-// click where it stands), so the whole game plays without a mouse too.
-// H asks for a hint, P pauses, Esc goes back to the title screen.
-import { CANVAS, LEFT_X, PANEL, PANEL_Y, RIGHT_X } from './config.js';
+// Mouse and keyboard. The mouse clicks straight on the pictures; the
+// keyboard drives a crosshair (arrows to move, Enter or Space to click
+// where it stands), so the whole hunt plays without a mouse too. Z
+// toggles the magnifier lens, H asks for a hint, M mutes the sounds,
+// P pauses, Esc goes back to the title screen.
+import { CANVAS_H, CANVAS_W, LEFT_PICTURE_X, PICTURE, RIGHT_PICTURE_X } from './config.js';
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_HINT = 2;
-export const ACTION_PAUSE = 4;
-export const ACTION_BACK = 8;
+export const ACT_CONFIRM = 1;
+export const ACT_HINT = 2;
+export const ACT_PAUSE = 4;
+export const ACT_BACK = 8;
+export const ACT_LENS = 16;
+export const ACT_MUTE = 32;
 
-/** Where a canvas click landed, in panel-local coordinates, or null. */
-export function clickToPanel(clientX, clientY, rect) {
-  const scaleX = CANVAS.width / rect.width;
-  const scaleY = CANVAS.height / rect.height;
+/**
+ * Turn a pointer position into panel-local coordinates. The return keeps
+ * both: the panel-local point (x, y) for the game logic and the canvas
+ * point (cx, cy) for button hit-testing.
+ */
+export function pointerToPanel(clientX, clientY, rect) {
+  const scaleX = CANVAS_W / rect.width;
+  const scaleY = CANVAS_H / rect.height;
   const x = (clientX - rect.left) * scaleX;
   const y = (clientY - rect.top) * scaleY;
-  // cx/cy are the same point in canvas coordinates, for button hit-testing.
   const point = { panel: null, x, y, cx: x, cy: y };
-  if (y >= PANEL_Y && y <= PANEL_Y + PANEL.height) {
-    if (x >= LEFT_X && x <= LEFT_X + PANEL.width) {
-      return { panel: 'left', x: x - LEFT_X, y: y - PANEL_Y, cx: x, cy: y };
+  if (y >= PICTURE.y && y <= PICTURE.y + PICTURE.h) {
+    if (x >= LEFT_PICTURE_X && x <= LEFT_PICTURE_X + PICTURE.w) {
+      return { panel: 'left', x: x - LEFT_PICTURE_X, y: y - PICTURE.y, cx: x, cy: y };
     }
-    if (x >= RIGHT_X && x <= RIGHT_X + PANEL.width) {
-      return { panel: 'right', x: x - RIGHT_X, y: y - PANEL_Y, cx: x, cy: y };
+    if (x >= RIGHT_PICTURE_X && x <= RIGHT_PICTURE_X + PICTURE.w) {
+      return { panel: 'right', x: x - RIGHT_PICTURE_X, y: y - PICTURE.y, cx: x, cy: y };
     }
   }
   return point;
 }
 
-/** Read a click's canvas coordinates (used for buttons drawn on canvas). */
-export function clickToCanvas(clientX, clientY, rect) {
+/** Canvas coordinates of a pointer event, for buttons drawn on canvas. */
+export function pointerToCanvas(clientX, clientY, rect) {
   return {
-    x: (clientX - rect.left) * (CANVAS.width / rect.width),
-    y: (clientY - rect.top) * (CANVAS.height / rect.height),
+    x: (clientX - rect.left) * (CANVAS_W / rect.width),
+    y: (clientY - rect.top) * (CANVAS_H / rect.height),
   };
 }
 
 export function createInput(canvas) {
   const keys = new Set();
-  const actions = { flags: 0 };
+  const pending = { flags: 0 };
   let clicks = [];
-  let crosshair = { x: CANVAS.width / 2, y: PANEL_Y + PANEL.height / 2, visible: false };
-  let mouse = { x: CANVAS.width / 2, y: PANEL_Y + PANEL.height / 2 };
+  const crosshair = { x: CANVAS_W / 2, y: PICTURE.y + PICTURE.h / 2, visible: false };
+  const pointer = { x: CANVAS_W / 2, y: PICTURE.y + PICTURE.h / 2, overPanel: null };
 
   canvas.addEventListener('pointermove', (event) => {
     const rect = canvas.getBoundingClientRect();
-    mouse = clickToCanvas(event.clientX, event.clientY, rect);
+    const p = pointerToCanvas(event.clientX, event.clientY, rect);
+    pointer.x = p.x;
+    pointer.y = p.y;
+    const panel = pointerToPanel(event.clientX, event.clientY, rect);
+    pointer.overPanel = panel.panel;
     crosshair.visible = false;
   });
 
   canvas.addEventListener('pointerdown', (event) => {
     const rect = canvas.getBoundingClientRect();
-    clicks.push(clickToPanel(event.clientX, event.clientY, rect));
+    clicks.push(pointerToPanel(event.clientX, event.clientY, rect));
   });
 
   window.addEventListener('keydown', (event) => {
@@ -60,10 +70,12 @@ export function createInput(canvas) {
     }
     if (event.repeat) return;
     keys.add(event.key);
-    if (event.key === 'Enter' || event.key === ' ') actions.flags |= ACTION_CONFIRM;
-    if (event.key === 'h' || event.key === 'H') actions.flags |= ACTION_HINT;
-    if (event.key === 'p' || event.key === 'P') actions.flags |= ACTION_PAUSE;
-    if (event.key === 'Escape') actions.flags |= ACTION_BACK;
+    if (event.key === 'Enter' || event.key === ' ') pending.flags |= ACT_CONFIRM;
+    if (event.key === 'h' || event.key === 'H') pending.flags |= ACT_HINT;
+    if (event.key === 'p' || event.key === 'P') pending.flags |= ACT_PAUSE;
+    if (event.key === 'Escape') pending.flags |= ACT_BACK;
+    if (event.key === 'z' || event.key === 'Z') pending.flags |= ACT_LENS;
+    if (event.key === 'm' || event.key === 'M') pending.flags |= ACT_MUTE;
     if (event.key.startsWith('Arrow')) crosshair.visible = true;
   });
   window.addEventListener('keyup', (event) => keys.delete(event.key));
@@ -74,8 +86,8 @@ export function createInput(canvas) {
     if (keys.has('ArrowRight')) crosshair.x += speed;
     if (keys.has('ArrowUp')) crosshair.y -= speed;
     if (keys.has('ArrowDown')) crosshair.y += speed;
-    crosshair.x = Math.max(0, Math.min(CANVAS.width, crosshair.x));
-    crosshair.y = Math.max(0, Math.min(CANVAS.height, crosshair.y));
+    crosshair.x = Math.max(0, Math.min(CANVAS_W, crosshair.x));
+    crosshair.y = Math.max(0, Math.min(CANVAS_H, crosshair.y));
   }
 
   return {
@@ -85,8 +97,8 @@ export function createInput(canvas) {
       return taken;
     },
     takeActions() {
-      const taken = actions.flags;
-      actions.flags = 0;
+      const taken = pending.flags;
+      pending.flags = 0;
       return taken;
     },
     update(dt) {
@@ -95,16 +107,16 @@ export function createInput(canvas) {
     crosshair() {
       return crosshair;
     },
-    mouse() {
-      return mouse;
+    pointer() {
+      return pointer;
     },
     /** The keyboard's click: the panel under the crosshair, if any. */
     crosshairPanel() {
       if (!crosshair.visible) return null;
-      return clickToPanel(
+      return pointerToPanel(
         crosshair.x,
         crosshair.y,
-        { left: 0, top: 0, width: CANVAS.width, height: CANVAS.height },
+        { left: 0, top: 0, width: CANVAS_W, height: CANVAS_H },
       );
     },
   };

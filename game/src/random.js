@@ -1,10 +1,10 @@
-// A tiny deterministic generator (mulberry32). Every scene draws its stars,
-// pebbles and bubbles from a fixed seed, so the left and right panels agree on
-// everything except the differences themselves, and a screenshot staged with
-// ?seed=N is byte-identical every time it is taken.
+// A small deterministic generator, so the two pictures of a scene agree
+// on every scattered star, pebble and bubble, and so a staged screenshot
+// paints the same pixels every time it is taken. mulberry32: a tiny
+// well-tested generator that fits in a few lines and needs no tables.
 
-/** Return a function that yields the next pseudo-random number in [0, 1). */
-export function createRandom(seed) {
+/** Build a generator that yields numbers in [0, 1) from a fixed seed. */
+export function seededRandom(seed) {
   let state = seed >>> 0;
   return function next() {
     state = (state + 0x6d2b79f5) >>> 0;
@@ -15,12 +15,17 @@ export function createRandom(seed) {
   };
 }
 
-/** Pick an integer in [min, max] from the generator. */
-export function randomInt(random, min, max) {
+/** An integer from min to max inclusive, drawn from the generator. */
+export function rollInt(random, min, max) {
   return min + Math.floor(random() * (max - min + 1));
 }
 
-/** Pick one element of an array from the generator. */
-export function randomPick(random, items) {
+/** One element of a list, drawn from the generator. */
+export function rollPick(random, items) {
   return items[Math.floor(random() * items.length)];
+}
+
+/** A number between min and max, drawn from the generator. */
+export function rollRange(random, min, max) {
+  return min + random() * (max - min);
 }
